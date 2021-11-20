@@ -3,18 +3,13 @@ module Elm exposing
     , Expression
     , bool, int, float, char, string, hex, unit
     , maybe, list, tuple, triple
-    , value, valueFrom, valueWith
-    , withType
-    , record, field, Field, get, updateRecord
     , caseOf, letIn, ifThen
     , apply
-    , lambda, lambda2, lambda3, lambda4, lambda5, lambdaBetaReduced
+    , lambda1, lambda2, lambda3, lambda4, lambda5, lambdaBetaReduced
     , Declaration
     , comment, declaration
     , withDocumentation
     , fn, fn2, fn3, fn4, fn5
-    , customType, Variant, variant, variantWith
-    , alias
     , expose, exposeConstructor
     , exposeAndGroup, exposeConstructorAndGroup
     , fileWith
@@ -45,15 +40,6 @@ module Elm exposing
 
 @docs maybe, list, tuple, triple
 
-@docs value, valueFrom, valueWith
-
-@docs withType
-
-
-## Records
-
-@docs record, field, Field, get, updateRecord
-
 
 ## Flow control
 
@@ -61,7 +47,7 @@ module Elm exposing
 
 @docs apply
 
-@docs lambda, lambda2, lambda3, lambda4, lambda5, lambdaBetaReduced
+@docs lambda1, lambda2, lambda3, lambda4, lambda5, lambdaBetaReduced
 
 
 ## Top level
@@ -73,13 +59,6 @@ module Elm exposing
 @docs withDocumentation
 
 @docs fn, fn2, fn3, fn4, fn5, fn6, functionWith
-
-
-## Custom Types
-
-@docs customType, Variant, variant, variantWith
-
-@docs alias
 
 
 ## Exposing values
@@ -393,149 +372,61 @@ type alias FileDetails =
     }
 
 
-type WRONG
-    = WRONG
-
-
-{-| -}
-value : String -> Expression WRONG
-value =
-    valueFrom []
-
-
-{-| -}
-valueFrom : List String -> String -> Expression WRONG
-valueFrom mod name =
+basicExpression tipe expr =
     Compiler.Expression
-        { expression =
-            Exp.FunctionOrValue mod
-                (Compiler.sanitize name)
-        , annotation = Err []
-        , imports = [ mod ]
+        { expression = expr
+        , annotation = Ok (Compiler.getInnerAnnotation tipe)
+        , imports = []
         , skip = False
-        }
-
-
-{-| Add an annotation to a value.
-
-**Note** this may not _literally_ add an annotation to the code, but will inform `elm-prefab`s type inference so that top level values can be auto-annotated.
-
-So, for example, if we have.
-
-    Elm.list
-        [ Elm.valueWith myModule "myString" Elm.Annotation.string
-        , Elm.valueWith myModule "myOtherString" Elm.Annotation.string
-        ]
-
-Then, when that list is generated, it will automatically have the type signature `List String`
-
--}
-valueWith : List String -> String -> Elm.Annotation.Annotation -> Expression WRONG
-valueWith mod name ann =
-    Compiler.Expression
-        { expression = Exp.FunctionOrValue mod (Compiler.sanitize name)
-        , annotation = Ok (Compiler.getInnerAnnotation ann)
-        , imports = mod :: Compiler.getAnnotationImports ann
-        , skip = False
-        }
-
-
-{-| Sometimes you may need to add a manual type annotation.
-
-    import Elm.Annotation as Type
-
-    Elm.value "myString"
-        |> Elm.withType (Type.string)
-
-Though be sure elm-prefab isn't already doing this automatically for you!
-
--}
-withType : Elm.Annotation.Annotation -> Expression a -> Expression WRONG
-withType ann (Compiler.Expression exp) =
-    Compiler.Expression
-        { exp
-            | annotation = Ok (Compiler.getInnerAnnotation ann)
-            , imports = exp.imports ++ Compiler.getAnnotationImports ann
         }
 
 
 {-| -}
 unit : Expression ()
 unit =
-    Compiler.Expression
-        { expression = Exp.UnitExpr
-        , annotation = Ok Annotation.Unit
-        , imports = []
-        , skip = False
-        }
+    basicExpression Elm.Annotation.unit Exp.UnitExpr
 
 
 {-| -}
 bool : Bool -> Expression Bool
 bool on =
-    valueWith []
-        (if on then
-            "True"
+    basicExpression Elm.Annotation.bool <|
+        Exp.FunctionOrValue [] <|
+            if on then
+                "True"
 
-         else
-            "False"
-        )
-        Elm.Annotation.bool
+            else
+                "False"
 
 
 {-| -}
 int : Int -> Expression Int
 int intVal =
-    Compiler.Expression
-        { expression = Exp.Integer intVal
-        , annotation = Ok (Compiler.getInnerAnnotation Elm.Annotation.int)
-        , imports = []
-        , skip = False
-        }
+    basicExpression Elm.Annotation.int <| Exp.Integer intVal
 
 
 {-| -}
 hex : Int -> Expression Int
 hex hexVal =
-    Compiler.Expression
-        { expression = Exp.Hex hexVal
-        , annotation = Ok (Compiler.getInnerAnnotation Elm.Annotation.int)
-        , imports = []
-        , skip = False
-        }
+    basicExpression Elm.Annotation.int <| Exp.Hex hexVal
 
 
 {-| -}
 float : Float -> Expression Float
 float floatVal =
-    Compiler.Expression
-        { expression = Exp.Floatable floatVal
-        , annotation = Ok (Compiler.getInnerAnnotation Elm.Annotation.float)
-        , imports = []
-        , skip = False
-        }
+    basicExpression Elm.Annotation.float <| Exp.Floatable floatVal
 
 
 {-| -}
 string : String -> Expression String
 string literal =
-    Compiler.Expression
-        { expression = Exp.Literal literal
-        , annotation = Ok (Compiler.getInnerAnnotation Elm.Annotation.string)
-        , imports = []
-        , skip = False
-        }
+    basicExpression Elm.Annotation.string <| Exp.Literal literal
 
 
 {-| -}
 char : Char -> Expression Char
 char charVal =
-    Compiler.Expression
-        { expression = Exp.CharLiteral charVal
-        , annotation = Ok (Compiler.getInnerAnnotation Elm.Annotation.char)
-        , imports = []
-        , skip = False
-        }
+    basicExpression Elm.Annotation.char <| Exp.CharLiteral charVal
 
 
 
@@ -657,125 +548,6 @@ toList (Compiler.Expression exp) =
     Compiler.nodify exp.expression
 
 
-{-| -}
-updateRecord : String -> List Field -> Expression Record
-updateRecord name fields =
-    Compiler.Expression
-        { expression =
-            fields
-                |> List.map
-                    (\(Field fieldName fieldExp) ->
-                        Compiler.nodify
-                            ( Compiler.nodify fieldName
-                            , Compiler.nodify (Compiler.getInnerExpression fieldExp)
-                            )
-                    )
-                |> Exp.RecordUpdateExpression (Compiler.nodify name)
-        , annotation =
-            Err []
-        , imports =
-            List.concatMap
-                (\(Field _ exp) -> Compiler.getImports exp)
-                fields
-        , skip = False
-        }
-
-
-{-| -}
-record : List Field -> Expression Record
-record fields =
-    let
-        unified =
-            fields
-                |> List.foldl
-                    (\(Field unformattedFieldName (Compiler.Expression exp)) found ->
-                        let
-                            fieldName =
-                                Compiler.formatValue unformattedFieldName
-                        in
-                        { fields =
-                            ( Compiler.nodify fieldName
-                            , Compiler.nodify exp.expression
-                            )
-                                :: found.fields
-                        , errors =
-                            if Set.member fieldName found.passed then
-                                Compiler.DuplicateFieldInRecord fieldName :: found.errors
-
-                            else
-                                case exp.annotation of
-                                    Err [] ->
-                                        Compiler.SomeOtherIssue :: found.errors
-
-                                    Err errs ->
-                                        errs ++ found.errors
-
-                                    Ok ann ->
-                                        found.errors
-                        , fieldAnnotations =
-                            case exp.annotation of
-                                Err err ->
-                                    found.fieldAnnotations
-
-                                Ok ann ->
-                                    ( Compiler.formatValue fieldName
-                                    , ann
-                                    )
-                                        :: found.fieldAnnotations
-                        , passed = Set.insert fieldName found.passed
-                        , imports = exp.imports ++ found.imports
-                        }
-                    )
-                    { fields = []
-                    , errors = []
-                    , fieldAnnotations = []
-                    , passed = Set.empty
-                    , imports = []
-                    }
-    in
-    Compiler.Expression
-        { expression =
-            unified.fields
-                |> List.reverse
-                |> Compiler.nodifyAll
-                |> Exp.RecordExpr
-        , annotation =
-            case unified.errors of
-                [] ->
-                    List.reverse unified.fieldAnnotations
-                        |> List.map
-                            (\( name, ann ) ->
-                                ( Compiler.nodify name
-                                , Compiler.nodify ann
-                                )
-                            )
-                        |> Compiler.nodifyAll
-                        |> Annotation.Record
-                        |> Ok
-
-                errs ->
-                    Err errs
-        , imports =
-            unified.imports
-        , skip = False
-        }
-
-
-{-| -}
-type Field
-    = Field String (Expression Whatever)
-
-
-type Whatever
-    = Whatever
-
-
-{-| -}
-field : String -> Expression a -> Field
-field name payload =
-    Field name (Compiler.unsafe payload)
-
-
 {-| A let block.
 
 Check out `Elm.Let` to add things to it.
@@ -892,173 +664,6 @@ caseOf (Compiler.Expression expr) cases =
         }
 
 
-type Record
-    = Record
-
-
-{-|
-
-    record
-        |> Elm.get "field"
-
-results in
-
-    record.field
-
--}
-get : String -> Expression Record -> Expression WRONG
-get selector (Compiler.Expression expr) =
-    Compiler.Expression
-        { expression =
-            Exp.RecordAccess (Compiler.nodify expr.expression) (Compiler.nodify (Compiler.formatValue selector))
-        , annotation =
-            case expr.annotation of
-                Ok (Annotation.Record fields) ->
-                    case getField (Compiler.formatValue selector) fields of
-                        Just ann ->
-                            Ok ann
-
-                        Nothing ->
-                            Err [ Compiler.CouldNotFindField selector ]
-
-                Ok (Annotation.GenericRecord name fields) ->
-                    case getField (Compiler.formatValue selector) (Compiler.denode fields) of
-                        Just ann ->
-                            Ok ann
-
-                        Nothing ->
-                            Err [ Compiler.CouldNotFindField selector ]
-
-                otherwise ->
-                    otherwise
-        , imports = expr.imports
-        , skip = False
-        }
-
-
-getField :
-    String
-    -> List (Node.Node ( Node.Node String, Node.Node b ))
-    -> Maybe b
-getField selector fields =
-    case fields of
-        [] ->
-            Nothing
-
-        nodifiedTop :: remain ->
-            case Compiler.denode nodifiedTop of
-                ( fieldname, contents ) ->
-                    if Compiler.denode fieldname == selector then
-                        Just (Compiler.denode contents)
-
-                    else
-                        getField selector remain
-
-
-{-| A custom type declaration.
-
-    Elm.customType "MyType"
-        [ Elm.variant "One"
-        , Elm.variantWith "Two" [ Elm.Annotation.list Elm.Annotation.string ]
-        ]
-
-Will result in
-
-    type MyType
-        = One
-        | Two (List String)
-
--}
-customType : String -> List Variant -> Declaration
-customType name variants =
-    Compiler.Declaration Compiler.NotExposed
-        (List.concatMap
-            (\(Variant _ listAnn) ->
-                List.concatMap Compiler.getAnnotationImports listAnn
-            )
-            variants
-        )
-        (Declaration.CustomTypeDeclaration
-            { documentation = Nothing
-            , name = Compiler.nodify (Compiler.formatType name)
-            , generics =
-                List.concatMap
-                    (\(Variant _ listAnn) ->
-                        listAnn
-                            |> List.concatMap
-                                Compiler.getGenerics
-                    )
-                    variants
-            , constructors =
-                List.map
-                    (\(Variant varName vars) ->
-                        Compiler.nodify
-                            { name = Compiler.nodify (Compiler.formatType varName)
-                            , arguments =
-                                List.map
-                                    (Compiler.getInnerAnnotation
-                                        >> Compiler.nodify
-                                    )
-                                    vars
-                            }
-                    )
-                    variants
-            }
-        )
-
-
-{-| -}
-type Variant
-    = Variant String (List Elm.Annotation.Annotation)
-
-
-{-| -}
-variant : String -> Variant
-variant name =
-    Variant name []
-
-
-{-| -}
-variantWith : String -> List Elm.Annotation.Annotation -> Variant
-variantWith =
-    Variant
-
-
-{-| A custom type declaration.
-
-    import Elm.Annotation as Type
-
-    Elm.alias "MyAlias"
-        (Type.record
-            [ ( "one", Type.string )
-            , ( "two", Type.int )
-            , ( "three", Type.var "content" )
-            ]
-        )
-
-Should result in
-
-    type alias MyAlias content =
-        { one : String
-        , two : Int
-        , three : content
-        }
-
--}
-alias : String -> Elm.Annotation.Annotation -> Declaration
-alias name innerAnnotation =
-    Compiler.Declaration Compiler.NotExposed
-        (Compiler.getAnnotationImports innerAnnotation)
-        (Declaration.AliasDeclaration
-            { documentation = Nothing
-            , name = Compiler.nodify (Compiler.formatType name)
-            , generics =
-                Compiler.getGenerics innerAnnotation
-            , typeAnnotation = Compiler.nodify (Compiler.getInnerAnnotation innerAnnotation)
-            }
-        )
-
-
 {-| Not exposed, this should be done automatically!
 -}
 parens : Exp.Expression -> Exp.Expression
@@ -1112,42 +717,13 @@ apply ((Compiler.Expression exp) as top) arg =
 
 
 {-| -}
-type alias Pattern =
-    Pattern.Pattern
-
-
-
--- {-| -}
--- lambdaWith : List ( Pattern, Elm.Annotation.Annotation ) -> Expression a -> Expression a
--- lambdaWith args (Compiler.Expression expr) =
---     Compiler.Expression
---         { expression =
---             Exp.LambdaExpression
---                 { args = Compiler.nodifyAll (List.map Tuple.first args)
---                 , expression = Compiler.nodify expr.expression
---                 }
---         , annotation =
---             case expr.annotation of
---                 Err err ->
---                     Err err
---                 Ok return ->
---                     List.foldr
---                         (\ann fnbody ->
---                             Annotation.FunctionTypeAnnotation
---                                 (Compiler.nodify ann)
---                                 (Compiler.nodify fnbody)
---                         )
---                         return
---                         (List.map (Compiler.getInnerAnnotation << Tuple.second) args)
---                         |> Ok
---         , imports = expr.imports
---         , skip = False
---         }
+type Pattern tipe exprs
+    = Pattern Pattern.Pattern
 
 
 {-| -}
-lambda : String -> Elm.Annotation.Annotation -> (Expression a -> Expression result) -> Expression result
-lambda argBaseName argType toExpression =
+lambda1 : Pattern tipe exprs -> (exprs -> Expression result) -> Expression (tipe -> result)
+lambda1 argBaseName argType toExpression =
     let
         arg1 =
             valueWith [] argBaseName argType

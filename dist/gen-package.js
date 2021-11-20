@@ -11074,17 +11074,14 @@ var $author$project$Generate$generateBlocks = function (block) {
 								$elm$core$List$reverse(
 									A2($elm$core$List$drop, 1, captured.bG)),
 								A2(
-									$author$project$Elm$withType,
-									$author$project$Generate$expressionType,
-									A2(
-										$author$project$Generate$apply,
-										A3(
-											$author$project$Generate$valueWith,
-											$author$project$Generate$thisModuleName,
-											$author$project$Elm$string(value.I),
-											value.aU),
-										$elm$core$List$reverse(
-											A2($elm$core$List$drop, 1, captured.Z)))))))
+									$author$project$Generate$apply,
+									A3(
+										$author$project$Generate$valueWith,
+										$author$project$Generate$thisModuleName,
+										$author$project$Elm$string(value.I),
+										value.aU),
+									$elm$core$List$reverse(
+										A2($elm$core$List$drop, 1, captured.Z))))))
 					]);
 			} else {
 				return _List_fromArray(

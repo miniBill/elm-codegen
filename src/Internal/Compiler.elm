@@ -10,11 +10,11 @@ import Elm.Syntax.Range as Range
 import Elm.Syntax.TypeAnnotation as Annotation
 
 
-type Annotation a
+type Annotation
     = Annotation AnnotationDetails
 
 
-getGenerics : Annotation a -> List (Node String)
+getGenerics : Annotation -> List (Node String)
 getGenerics (Annotation details) =
     getGenericsHelper details.annotation
 
@@ -59,7 +59,7 @@ getGenericsHelper ann =
                 ]
 
 
-noImports : Annotation.TypeAnnotation -> Annotation a
+noImports : Annotation.TypeAnnotation -> Annotation
 noImports tipe =
     Annotation
         { annotation = tipe
@@ -67,12 +67,12 @@ noImports tipe =
         }
 
 
-getInnerAnnotation : Annotation a -> Annotation.TypeAnnotation
+getInnerAnnotation : Annotation -> Annotation.TypeAnnotation
 getInnerAnnotation (Annotation details) =
     details.annotation
 
 
-getAnnotationImports : Annotation a -> List Module
+getAnnotationImports : Annotation -> List Module
 getAnnotationImports (Annotation details) =
     details.imports
 

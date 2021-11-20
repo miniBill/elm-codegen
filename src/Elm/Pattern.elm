@@ -44,8 +44,8 @@ import Internal.Compiler as Util
 
 
 {-| -}
-type alias Pattern =
-    Pattern.Pattern
+type Pattern tipe exprs
+    = Pattern Pattern.Pattern exprs
 
 
 {-| -}
@@ -55,9 +55,9 @@ type alias Module =
 
 {-| The catchall `_` pattern.
 -}
-wildcard : Pattern
+wildcard : Pattern tipe ()
 wildcard =
-    Pattern.AllPattern
+    Pattern Pattern.AllPattern ()
 
 
 {-|
@@ -65,9 +65,9 @@ wildcard =
     `()`
 
 -}
-unit : Pattern
+unit : Pattern () ()
 unit =
-    Pattern.UnitPattern
+    Pattern Pattern.UnitPattern ()
 
 
 {-|
@@ -75,21 +75,21 @@ unit =
     'c'
 
 -}
-char : Char -> Pattern
+char : Char -> Pattern Char ()
 char charVal =
-    Pattern.CharPattern charVal
+    Pattern (Pattern.CharPattern charVal) ()
 
 
 {-| -}
-string : String -> Pattern
+string : String -> Pattern String ()
 string literal =
-    Pattern.StringPattern literal
+    Pattern (Pattern.StringPattern literal) ()
 
 
 {-| -}
-int : Int -> Pattern
+int : Int -> Pattern Int ()
 int intVal =
-    Pattern.IntPattern intVal
+    Pattern (Pattern.IntPattern intVal) ()
 
 
 {-|
@@ -97,15 +97,15 @@ int intVal =
     0x11
 
 -}
-hex : Int -> Pattern
+hex : Int -> Pattern Int ()
 hex hexVal =
-    Pattern.HexPattern hexVal
+    Pattern (Pattern.HexPattern hexVal) ()
 
 
 {-| -}
-float : Float -> Pattern
+float : Float -> Pattern Float ()
 float floatVal =
-    Pattern.FloatPattern floatVal
+    Pattern (Pattern.FloatPattern floatVal) ()
 
 
 {-|
@@ -119,45 +119,53 @@ results in
     ( one, two )
 
 -}
-tuple : Pattern -> Pattern -> Pattern
-tuple one two =
-    Pattern.TuplePattern (Util.nodifyAll [ one, two ])
+tuple : Pattern a ea -> Pattern b eb -> Pattern ( a, b ) ( ea, eb )
+tuple (Pattern one eone) (Pattern two etwo) =
+    Pattern
+        (Pattern.TuplePattern (Util.nodifyAll [ one, two ]))
+        ( eone, etwo )
 
 
 {-| -}
-triple : Pattern -> Pattern -> Pattern -> Pattern
-triple one two three =
-    Pattern.TuplePattern (Util.nodifyAll [ one, two, three ])
+triple : Pattern a ea -> Pattern b eb -> Pattern c ec -> Pattern ( a, b, c ) ( ea, eb, ec )
+triple (Pattern one eone) (Pattern two etwo) (Pattern three ethree) =
+    Pattern
+        (Pattern.TuplePattern (Util.nodifyAll [ one, two, three ]))
+        ( eone, etwo, ethree )
 
 
-{-|
 
-    Elm.Pattern.fields
-        [ "field1"
-        , "field2"
-        ]
-
-results in
-
-    { field1, field2}
-
--}
-fields : List String -> Pattern
-fields flds =
-    Pattern.RecordPattern (Util.nodifyAll flds)
-
-
-{-| -}
-cons : Pattern -> Pattern -> Pattern
-cons hd tl =
-    Pattern.UnConsPattern (Util.nodify hd) (Util.nodify tl)
-        |> parens
+-- {-|
+--     Elm.Pattern.fields
+--         [ "field1"
+--         , "field2"
+--         ]
+-- results in
+--     { field1, field2}
+-- -}
+-- fields : List String -> Pattern
+-- fields flds =
+--     Pattern.RecordPattern (Util.nodifyAll flds)
 
 
 {-| -}
-list : List Pattern -> Pattern
+cons : Pattern tipe hexpr -> Pattern (List tipe) texpr -> Pattern (List tipe) ( hexpr, texpr )
+cons (Pattern hd eh) (Pattern tl et) =
+    Pattern
+        (Pattern.UnConsPattern (Util.nodify hd) (Util.nodify tl)
+            |> parens
+        )
+        ( eh, et )
+
+
+{-| -}
+list : List (Pattern tipe texpr) -> Pattern (List tipe) (List texpr)
 list seq =
-    Pattern.ListPattern (Util.nodifyAll seq)
+    let
+        ( patterns, exprs ) =
+            seq |> List.map (\(Pattern t e) -> ( t, e )) |> List.unzip
+    in
+    Pattern (Pattern.ListPattern (Util.nodifyAll patterns)) exprs
 
 
 {-| A simple variable name!
@@ -165,9 +173,9 @@ list seq =
 This is what you want 90% of the time.
 
 -}
-var : String -> Pattern
+var : String -> Pattern tipe (Util.Expression tipe)
 var name =
-    Pattern.VarPattern name
+    Pattern (Pattern.VarPattern name) ()
 
 
 {-|

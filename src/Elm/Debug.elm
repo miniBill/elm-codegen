@@ -10,8 +10,8 @@ import Elm.Syntax.TypeAnnotation as Annotation
 import Internal.Compiler as Compiler
 
 
-type alias Expression =
-    Compiler.Expression
+type alias Expression tipe =
+    Compiler.Expression tipe
 
 
 {-| Print out what elm-prefab thinks the type signature is at any given point.
@@ -22,8 +22,8 @@ annotation :
      -> Result (List Compiler.InferenceError) Annotation.TypeAnnotation
     )
     -> String
-    -> Expression
-    -> Expression
+    -> Expression tipe
+    -> Expression tipe
 annotation debugLog tag exp =
     let
         _ =
