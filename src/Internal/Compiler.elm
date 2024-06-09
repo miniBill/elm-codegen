@@ -52,9 +52,6 @@ module Internal.Compiler exposing
     , thread
     , toExpressionDetails
     , toVar
-    , toVarExactName
-    , toVarMaybeType
-    , toVarWithType
     , unify
     , unifyOn
     )
@@ -374,125 +371,6 @@ toVar index desiredName =
     }
 
 
-toVarExactName :
-    Index
-    -> String
-    ->
-        { name : String
-        , typename : String
-        , val : Expression
-        , index : Index
-        }
-toVarExactName index name =
-    let
-        typename : String
-        typename =
-            Index.protectTypeName name index
-    in
-    { name = name
-    , typename = typename
-    , index = Index.next index
-    , val =
-        Expression <|
-            \_ ->
-                { expression =
-                    Exp.FunctionOrValue []
-                        name
-                , annotation =
-                    Ok
-                        { type_ =
-                            Annotation.GenericType typename
-                        , inferences = Dict.empty
-                        , aliases = emptyAliases
-                        }
-                , imports =
-                    []
-                }
-    }
-
-
-toVarMaybeType :
-    Index
-    -> String
-    -> Maybe Annotation
-    ->
-        { name : String
-        , type_ : Annotation.TypeAnnotation
-        , val : Expression
-        , index : Index
-        }
-toVarMaybeType index desiredName maybeAnnotation =
-    let
-        ( name, newIndex ) =
-            Index.getName desiredName index
-
-        { imports, annotation, aliases } =
-            case maybeAnnotation of
-                Nothing ->
-                    { imports = []
-                    , annotation = Annotation.GenericType (Index.protectTypeName desiredName index)
-                    , aliases = emptyAliases
-                    }
-
-                Just (Annotation ann) ->
-                    ann
-    in
-    { name = name
-    , type_ = annotation
-    , index = newIndex
-    , val =
-        Expression <|
-            \_ ->
-                { expression =
-                    Exp.FunctionOrValue []
-                        name
-                , annotation =
-                    Ok
-                        { type_ =
-                            annotation
-                        , inferences = Dict.empty
-                        , aliases = aliases
-                        }
-                , imports =
-                    imports
-                }
-    }
-
-
-toVarWithType :
-    Index
-    -> String
-    -> Annotation
-    ->
-        { name : String
-        , exp : Expression
-        , index : Index
-        }
-toVarWithType index desiredName (Annotation ann) =
-    let
-        ( name, newIndex ) =
-            Index.getName desiredName index
-    in
-    { name = name
-    , index = newIndex
-    , exp =
-        Expression <|
-            \_ ->
-                { expression =
-                    Exp.FunctionOrValue []
-                        name
-                , annotation =
-                    Ok
-                        { inferences = Dict.empty
-                        , aliases = ann.aliases
-                        , type_ = ann.annotation
-                        }
-                , imports =
-                    ann.imports
-                }
-    }
-
-
 mergeInferences :
     Dict String Annotation.TypeAnnotation
     -> Dict String Annotation.TypeAnnotation
@@ -730,8 +608,6 @@ getInnerInference index (Annotation details) =
             -- running protectAnnotation will cause the typechecking to fail :/
             -- So, there's a bug to debug
             |> protectAnnotation index
-
-    --details.annotation
     , inferences = Dict.empty
     , aliases = details.aliases
     }
@@ -834,7 +710,8 @@ type alias Module =
 
 
 makeImport :
-    List ( Module, String )
+    Module
+    -> List ( Module, String )
     -> Module
     ->
         Maybe
@@ -842,21 +719,53 @@ makeImport :
             , moduleAlias : Maybe (Node (List String))
             , exposingList : Maybe (Node Expose.Exposing)
             }
-makeImport aliases name =
-    case name of
-        [] ->
-            Nothing
+makeImport thisModule aliases name =
+    if thisModule == name then
+        Nothing
 
-        _ ->
-            case findAlias name aliases of
-                Nothing ->
-                    if builtIn name then
-                        Nothing
+    else
+        case name of
+            [] ->
+                Nothing
 
-                    else
+            _ ->
+                case findAlias name aliases of
+                    Nothing ->
+                        if builtIn name then
+                            Nothing
+
+                        else
+                            Just
+                                { moduleName = nodify name
+                                , moduleAlias = Nothing
+                                , exposingList =
+                                    if isUrlParser name then
+                                        Just
+                                            (nodify <|
+                                                Expose.Explicit
+                                                    [ nodify (Expose.InfixExpose "</>")
+                                                    , nodify (Expose.InfixExpose "<?>")
+                                                    ]
+                                            )
+
+                                    else if isParser name then
+                                        Just
+                                            (nodify <|
+                                                Expose.Explicit
+                                                    [ nodify (Expose.InfixExpose "|=")
+                                                    , nodify (Expose.InfixExpose "|.")
+                                                    ]
+                                            )
+
+                                    else
+                                        Nothing
+                                }
+
+                    Just alias ->
                         Just
                             { moduleName = nodify name
-                            , moduleAlias = Nothing
+                            , moduleAlias =
+                                Just (nodify [ alias ])
                             , exposingList =
                                 if isUrlParser name then
                                     Just
@@ -879,34 +788,6 @@ makeImport aliases name =
                                 else
                                     Nothing
                             }
-
-                Just alias ->
-                    Just
-                        { moduleName = nodify name
-                        , moduleAlias =
-                            Just (nodify [ alias ])
-                        , exposingList =
-                            if isUrlParser name then
-                                Just
-                                    (nodify <|
-                                        Expose.Explicit
-                                            [ nodify (Expose.InfixExpose "</>")
-                                            , nodify (Expose.InfixExpose "<?>")
-                                            ]
-                                    )
-
-                            else if isParser name then
-                                Just
-                                    (nodify <|
-                                        Expose.Explicit
-                                            [ nodify (Expose.InfixExpose "|=")
-                                            , nodify (Expose.InfixExpose "|.")
-                                            ]
-                                    )
-
-                            else
-                                Nothing
-                        }
 
 
 findAlias : List String -> List ( Module, String ) -> Maybe String
@@ -2645,7 +2526,8 @@ protectAnnotation index ann =
                 (str ++ Index.indexToString index)
 
         Annotation.Typed modName anns ->
-            Annotation.Typed modName
+            Annotation.Typed
+                modName
                 (List.map (mapNode (protectAnnotation index))
                     anns
                 )

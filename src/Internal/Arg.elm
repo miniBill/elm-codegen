@@ -1,25 +1,33 @@
 module Internal.Arg exposing
-    ( Arg(..)
-    , ArgDetails
-    , Expression
-    , Module
-    , char
+    ( Arg(..), ArgDetails, Expression, Module, toDetails
+    , aliasAs
+    , var, varWith
+    , triple, tuple
+    , char, string
     , customType
-    , field
-    , ignore
-    , item
-    , list
-    , listRemaining
-    , record
-    , string
-    , toDetails
-    , triple
-    , tuple
-    , unit
-    , val
-    , var
-    , varWith
+    , item, items, list, listRemaining, record, field
+    , ignore, unit
     )
+
+{-|
+
+@docs Arg, ArgDetails, Expression, Module, toDetails
+
+@docs aliasAs
+
+@docs var, varWith
+
+@docs triple, tuple
+
+@docs char, string
+
+@docs customType
+
+@docs item, items, list, listRemaining, record, field
+
+@docs ignore, unit
+
+-}
 
 import Dict
 import Elm.Syntax.Expression as Exp
@@ -81,12 +89,9 @@ unit =
             let
                 annotation =
                     Ok (Compiler.inference Annotation.Unit)
-
-                imports =
-                    []
             in
             { details =
-                { imports = imports
+                { imports = []
                 , pattern = Compiler.nodify Pattern.UnitPattern
                 , annotation = annotation
                 }
@@ -96,7 +101,7 @@ unit =
                     \_ ->
                         { expression = Exp.UnitExpr
                         , annotation = Ok (Compiler.inference Annotation.Unit)
-                        , imports = imports
+                        , imports = []
                         }
             }
         )
@@ -131,6 +136,36 @@ string str =
                         , annotation = annotation
                         , imports = imports
                         }
+            }
+        )
+
+
+{-| -}
+aliasAs : String -> Arg arg -> Arg ( arg, Expression )
+aliasAs aliasName (Arg toArgDetails) =
+    Arg
+        (\index ->
+            let
+                innerArgDetails =
+                    toArgDetails index
+
+                ( aliasVal, _, _ ) =
+                    val innerArgDetails.index aliasName
+            in
+            { details =
+                { imports = innerArgDetails.details.imports
+                , pattern =
+                    Pattern.AsPattern
+                        innerArgDetails.details.pattern
+                        (Compiler.nodify aliasName)
+                        |> Compiler.nodify
+                , annotation = innerArgDetails.details.annotation
+                }
+            , index = Index.next innerArgDetails.index
+            , value =
+                ( innerArgDetails.value
+                , aliasVal
+                )
             }
         )
 
@@ -234,15 +269,20 @@ tuple (Arg arg1) (Arg arg2) =
                             }
                         )
                         details1.annotation
-                        details1.annotation
+                        details2.annotation
 
                 imports =
-                    List.concat [ details1.imports, details2.imports ]
+                    details1.imports ++ details2.imports
             in
             { details =
                 { imports = imports
                 , pattern =
-                    Compiler.nodify (Pattern.TuplePattern [ details1.pattern, details2.pattern ])
+                    Compiler.nodify
+                        (Pattern.TuplePattern
+                            [ details1.pattern
+                            , details2.pattern
+                            ]
+                        )
                 , annotation = annotation
                 }
             , index = Index.next two.index
@@ -335,15 +375,14 @@ val :
         )
 val index name =
     let
+        typename : String
+        typename =
+            Index.protectTypeName name index
+
         type_ =
-            Annotation.GenericType name
+            Annotation.GenericType typename
 
         annotation =
-            let
-                typename : String
-                typename =
-                    Index.protectTypeName name index
-            in
             Ok
                 { type_ = type_
                 , inferences = Dict.empty
@@ -368,25 +407,25 @@ val index name =
 
 {-| -}
 var : String -> Arg Expression
-var name =
+var rawName =
     Arg
         (\index ->
             let
-                sanitizedName =
-                    Format.formatValue name
+                ( name, nameIndex ) =
+                    Index.getName rawName index
 
                 ( value, annotation, _ ) =
-                    val index sanitizedName
+                    val nameIndex name
 
                 imports =
                     []
             in
             { details =
                 { imports = imports
-                , pattern = Compiler.nodify (Pattern.VarPattern sanitizedName)
+                , pattern = Compiler.nodify (Pattern.VarPattern name)
                 , annotation = annotation
                 }
-            , index = Index.next index
+            , index = Index.next nameIndex
             , value = value
             }
         )
@@ -394,12 +433,15 @@ var name =
 
 {-| -}
 varWith : String -> Compiler.Annotation -> Arg Expression
-varWith name ann =
+varWith rawName ann =
     Arg
         (\index ->
             let
+                ( name, nameIndex ) =
+                    Index.getName rawName index
+
                 annotation =
-                    Ok (Compiler.getInnerInference index ann)
+                    Ok (Compiler.getInnerInference nameIndex ann)
 
                 imports =
                     Compiler.getAnnotationImports ann
@@ -409,7 +451,7 @@ varWith name ann =
                 , pattern = Compiler.nodify (Pattern.VarPattern name)
                 , annotation = annotation
                 }
-            , index = Index.next index
+            , index = Index.next nameIndex
             , value =
                 Compiler.Expression <|
                     \_ ->
@@ -481,7 +523,7 @@ customType name toType =
                         )
                 , annotation = annotation
                 }
-            , index = Index.next index
+            , index = Index.dive index
             , value =
                 toType
             }
@@ -513,7 +555,7 @@ listRemaining variableName (Arg toRemaining) =
                 imports =
                     []
 
-                ( variable, variableAnnotation, innerAnnotation ) =
+                ( variable, _, _ ) =
                     val toSequence.index variableName
             in
             { details =
@@ -553,17 +595,6 @@ item (Arg itemArg) (Arg arg) =
                     Result.map
                         (\ann ->
                             { type_ =
-                                -- case ann.type_ of
-                                --     Annotation.Record fields ->
-                                --         Annotation.Record
-                                --             (fields
-                                --                 ++ [ Compiler.nodify
-                                --                         ( Compiler.nodify name
-                                --                         , Compiler.nodify fieldType
-                                --                         )
-                                --                    ]
-                                --             )
-                                --     _ ->
                                 ann.type_
                             , inferences = ann.inferences
                             , aliases = ann.aliases
@@ -588,9 +619,68 @@ item (Arg itemArg) (Arg arg) =
                             details.pattern
                 , annotation = newAnnotation
                 }
-            , index = Index.next index
+            , index = Index.next itemDetails.index
             , value =
                 toSequence.value itemDetails.value
+            }
+        )
+
+
+items : List (Arg arg) -> Arg (List arg -> a) -> Arg a
+items itemsArgs (Arg arg) =
+    Arg
+        (\index ->
+            let
+                toSequence =
+                    arg index
+
+                ( itemsDetails, lastIndex ) =
+                    List.foldr
+                        (\(Arg itemArg) ( dacc, iacc ) ->
+                            let
+                                itemDetails =
+                                    itemArg iacc
+                            in
+                            ( itemDetails :: dacc, itemDetails.index )
+                        )
+                        ( [], toSequence.index )
+                        itemsArgs
+
+                details =
+                    toSequence
+                        |> .details
+
+                newAnnotation =
+                    Result.map
+                        (\ann ->
+                            { type_ =
+                                ann.type_
+                            , inferences = ann.inferences
+                            , aliases = ann.aliases
+                            }
+                        )
+                        details.annotation
+
+                imports =
+                    details.imports
+            in
+            { details =
+                { imports = imports
+                , pattern =
+                    case Compiler.denode details.pattern of
+                        Pattern.ListPattern listItems ->
+                            Compiler.nodify (Pattern.ListPattern (listItems ++ List.map (\itemDetails -> itemDetails.details.pattern) itemsDetails))
+
+                        Pattern.NamedPattern base variantItems ->
+                            Compiler.nodify (Pattern.NamedPattern base (variantItems ++ List.map (\itemDetails -> itemDetails.details.pattern) itemsDetails))
+
+                        _ ->
+                            details.pattern
+                , annotation = newAnnotation
+                }
+            , index = Index.next lastIndex
+            , value =
+                toSequence.value (List.map .value itemsDetails)
             }
         )
 
@@ -662,7 +752,7 @@ field name (Arg arg) =
                 imports =
                     details.imports
 
-                ( fieldExpression, fieldAnnotation, fieldType ) =
+                ( fieldExpression, _, fieldType ) =
                     val index name
             in
             { details =

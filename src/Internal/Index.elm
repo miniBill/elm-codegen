@@ -3,6 +3,7 @@ module Internal.Index exposing
     , next, dive
     , getName, indexToString, protectTypeName
     , typecheck
+    , getImport, hasModuleName
     )
 
 {-|
@@ -14,6 +15,8 @@ module Internal.Index exposing
 @docs getName, indexToString, protectTypeName
 
 @docs typecheck
+
+@docs getImport, hasModuleName
 
 -}
 
@@ -40,6 +43,30 @@ If you're handing an index to a lower lever, use Compiler.dive.
 -}
 type Index
     = Index (Maybe ModuleName) Int (List Int) Scope Bool
+
+
+hasModuleName : Index -> Bool
+hasModuleName (Index maybeModName _ _ _ _) =
+    case maybeModName of
+        Just _ ->
+            True
+
+        Nothing ->
+            False
+
+
+getImport : Index -> List String -> List String
+getImport (Index maybeModName _ _ _ _) importedAs =
+    case maybeModName of
+        Just modName ->
+            if modName == importedAs then
+                []
+
+            else
+                importedAs
+
+        Nothing ->
+            importedAs
 
 
 type alias ModuleName =
@@ -126,7 +153,7 @@ protectTypeName base ((Index _ _ tail _ _) as index) =
 
 
 indexToString : Index -> String
-indexToString (Index modName top tail _ _) =
+indexToString (Index _ top tail _ _) =
     (if top == 0 then
         ""
 

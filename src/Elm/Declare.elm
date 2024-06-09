@@ -1,14 +1,12 @@
 module Elm.Declare exposing
     ( Function, fn, fn2, fn3, fn4, fn5, fn6
-    , fnArg, fnDone
+    , fnBuilder, fnArg, fnDone, fnBody, placeholder
     , Value, value
     , function
-    , Module, module_
-    , with, withUnexposed, placeholder
+    , Module, module_, with, withUnexposed
     , Annotation, alias, customType
+    , toFile, include
     , Internal
-    , toFile
-    , fnBuilder
     )
 
 {-| You may run into situations where you want to generate a function, and then call that generated function somewhere else.
@@ -17,11 +15,14 @@ This module will help you do that.
 
 Here's an example, let's define a new function called `add42`
 
+    import Elm.Arg as Arg
+    import Elm.Declare as Declare
+
     renderFile =
         let
             add42 =
-                Elm.Declare.fn "add42"
-                    ( "firstInt", Nothing )
+                Declare.fn "add42"
+                    (Arg.value "firstInt")
                     (\firstArgument ->
                         Elm.plus
                             (Elm.int 42)
@@ -37,56 +38,31 @@ Here's an example, let's define a new function called `add42`
                 (add42.call (Elm.int 82))
             ]
 
-Depending on your situation, you may want to define a function in one file, but call it from another.
-
-In that case you can do something like this using `callFrom`:
-
-    renderFileList =
-        let
-            add42 =
-                Elm.Declare.fn "add42"
-                    ( "firstInt", Nothing )
-                    (\firstArgument ->
-                        Elm.plus
-                            (Elm.int 42)
-                            firstArgument
-                    )
-        in
-        [ Elm.file [ "MyFile" ]
-            -- add our declaration to our file
-            [ add42.declaration
-            ]
-        , Elm.file [ "MyOtherFile" ]
-            -- and call from another file
-            [ Elm.declaration "mySweetNumber"
-                (add42.callFrom [ "MyFile" ] (Elm.int 82))
-            ]
-        ]
-
 @docs Function, fn, fn2, fn3, fn4, fn5, fn6
 
-@docs fnBuilder, fnArg, fnDone
+@docs fnBuilder, fnArg, fnDone, fnBody, placeholder
 
 @docs Value, value
 
 @docs function
 
-@docs Module, module_
-
-@docs with, withUnexposed, placeholder
+@docs Module, module_, with, withUnexposed
 
 @docs Annotation, alias, customType
 
-@docs Internal
+@docs toFile, include
 
-@docs toFile
+@docs Internal
 
 -}
 
 import Elm exposing (Expression)
 import Elm.Annotation
 import Elm.Arg
+import Elm.Syntax.Expression as Exp
+import Internal.Compiler as Compiler
 import Internal.Format as Format
+import Internal.Index as Index
 
 
 {-| -}
@@ -155,14 +131,20 @@ customType name variants =
 
 
 {-| -}
-with : { a | declaration : Elm.Declaration, internal : Internal required } -> Module (required -> val) -> Module val
+with :
+    { a
+        | declaration : Elm.Declaration
+        , internal : Internal required
+    }
+    -> Module (required -> val)
+    -> Module val
 with decl mod =
     let
         (Internal call) =
             decl.internal
     in
     { name = mod.name
-    , declarations = decl.declaration :: mod.declarations
+    , declarations = Elm.expose decl.declaration :: mod.declarations
     , call = mod.call (call mod.name)
     }
 
@@ -312,6 +294,21 @@ fnArg arg builder =
 
 
 {-| -}
+fnBody :
+    (args -> Expression)
+    ->
+        { name : String
+        , builder : Elm.Fn args
+        , call : Expression -> List Expression -> res
+        }
+    -> Function res
+fnBody renderer builder =
+    innerFunction builder.name
+        (Elm.body renderer builder.builder)
+        (\expr -> builder.call expr [])
+
+
+{-| -}
 fnDone :
     { name : String
     , builder : Elm.Fn Expression
@@ -319,7 +316,9 @@ fnDone :
     }
     -> Function res
 fnDone builder =
-    innerFunction builder.name (Elm.fnDone builder.builder) (\expr -> builder.call expr [])
+    innerFunction builder.name
+        (Elm.fnDone builder.builder)
+        (\expr -> builder.call expr [])
 
 
 {-| -}
@@ -338,21 +337,52 @@ innerFunction :
     -> (Expression -> tipe)
     -> Function tipe
 innerFunction name funcExp call =
-    { value = Elm.val name
-    , call = call (Elm.val name)
+    let
+        functionVal =
+            valWithType [] name funcExp
+    in
+    { value = functionVal
+    , call = call functionVal
     , declaration = Elm.declaration name funcExp
     , internal =
         Internal
             (\modName ->
-                call
-                    (Elm.value
-                        { importFrom = modName
-                        , name = Format.sanitize name
-                        , annotation = Nothing
-                        }
-                    )
+                call (valWithType modName name funcExp)
             )
     }
+
+
+valWithType :
+    List String
+    -> String
+    -> Elm.Expression
+    -> Elm.Expression
+valWithType importFrom name fnExp =
+    Compiler.Expression
+        (\index ->
+            let
+                ( oneIndex, one ) =
+                    Compiler.toExpressionDetails index fnExp
+
+                qualifiedImport =
+                    Index.getImport oneIndex importFrom
+            in
+            { expression =
+                -- This *must* be an un-protected name, where we only use
+                -- literally what the dev gives us, because we are trying
+                -- to refer to something that already exists.
+                Exp.FunctionOrValue qualifiedImport
+                    (Format.sanitize name)
+            , annotation = one.annotation
+            , imports =
+                case qualifiedImport of
+                    [] ->
+                        one.imports
+
+                    qual ->
+                        one.imports ++ [ qual ]
+            }
+        )
 
 
 {-| -}
@@ -399,3 +429,13 @@ toFile : Module val -> Elm.File
 toFile mod =
     Elm.file mod.name
         (List.reverse mod.declarations)
+
+
+{-| -}
+include : { title : String, docs : String } -> Module val -> Elm.Declaration
+include docs mod =
+    Compiler.Group
+        { title = docs.title
+        , docs = docs.docs
+        , decls = mod.declarations
+        }

@@ -56,14 +56,17 @@ expressionWith :
         }
 expressionWith options (Compiler.Expression toExp) =
     let
+        index =
+            Index.startIndex Nothing
+
         expresh : Compiler.ExpressionDetails
         expresh =
-            toExp (Index.startIndex Nothing)
+            toExp index
     in
     { imports =
         expresh
             |> Compiler.getImports
-            |> List.filterMap (Compiler.makeImport options.aliases)
+            |> List.filterMap (Compiler.makeImport [] options.aliases)
             |> Internal.Write.writeImports
     , body = Internal.Write.writeExpressionWith options.aliases expresh.expression
     , signature =
@@ -71,7 +74,7 @@ expressionWith options (Compiler.Expression toExp) =
             Ok sig ->
                 case Compiler.resolve (Index.startIndex Nothing) sig.inferences sig.type_ of
                     Ok finalType ->
-                        Internal.Write.writeAnnotationWith options.aliases (Clean.clean finalType)
+                        Internal.Write.writeAnnotationWith options.aliases (Clean.clean index finalType)
 
                     Err errMsg ->
                         errMsg
@@ -116,18 +119,21 @@ declarationWith options decl =
 
         Compiler.Declaration { imports, docs, toBody } ->
             let
+                index =
+                    Index.startIndex Nothing
+
                 rendered :
                     { declaration : Declaration.Declaration
                     , additionalImports : List Compiler.Module
                     , warning : Maybe Compiler.Warning
                     }
                 rendered =
-                    toBody (Index.startIndex Nothing)
+                    toBody index
             in
             [ { imports =
                     imports
                         ++ rendered.additionalImports
-                        |> List.filterMap (Compiler.makeImport options.aliases)
+                        |> List.filterMap (Compiler.makeImport [] options.aliases)
                         |> Internal.Write.writeImports
               , body = Internal.Write.writeDeclarationWith options.aliases (Compiler.RenderedDecl rendered.declaration)
               , docs =
@@ -142,7 +148,7 @@ declarationWith options decl =
                                 Just (Node _ sig) ->
                                     Internal.Write.writeSignatureWith options.aliases
                                         { name = sig.name
-                                        , typeAnnotation = Node.map Clean.clean sig.typeAnnotation
+                                        , typeAnnotation = Node.map (Clean.clean index) sig.typeAnnotation
                                         }
 
                         _ ->
@@ -194,7 +200,7 @@ annotationWith :
         }
 annotationWith options (Compiler.Annotation ann) =
     { imports =
-        List.filterMap (Compiler.makeImport options.aliases) ann.imports
+        List.filterMap (Compiler.makeImport [] options.aliases) ann.imports
             |> Internal.Write.writeImports
     , signature =
         Internal.Write.writeAnnotationWith options.aliases ann.annotation

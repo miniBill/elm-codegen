@@ -33,9 +33,11 @@ newStyleTest =
         , test "declaration" <|
             \_ ->
                 Elm.Expect.declarationAs newStyle.declaration
-                    """name : ( a, b ) -> c -> ( a, b, c )
+                    (String.trim """
+
+name : ( a, b ) -> c -> ( a, b, c )
 name ( a, b ) c =
-    ( a, b, c )"""
+    ( a, b, c )""")
         ]
 
 
@@ -59,7 +61,7 @@ myFn : Elm.Declare.Function (Elm.Expression -> Elm.Expression)
 myFn =
     Elm.Declare.fn "myFn"
         (Elm.Arg.var "myInt")
-        (Elm.Op.plus (Elm.int 5))
+        (\num -> Elm.Op.plus (Elm.int 5) num)
 
 
 declarations : Test
@@ -80,6 +82,7 @@ myFn myInt =
                         (myFn.call (Elm.int 82))
                     )
                     """
+
 mySweetNumber : Int
 mySweetNumber =
     myFn 82
